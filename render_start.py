@@ -1,27 +1,45 @@
 import os
 import sys
-import socket
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
-# Monkey-patch serve_local before import
 PORT = int(os.environ.get("PORT", 10000))
 HOST = "0.0.0.0"
+TARGET_FILE = "homepage.html"
 
-# Try to import and override server config
-try:
-    import serve_local
-    # Common patterns to override
-    if hasattr(serve_local, 'HOST'):
-        serve_local.HOST = HOST
-    if hasattr(serve_local, 'PORT'):
-        serve_local.PORT = PORT
-    if hasattr(serve_local, 'server_address'):
-        serve_local.server_address = (HOST, PORT)
-    serve_local.main()
-except Exception as e:
-    print(f"[FALLBACK] Could not patch serve_local: {e}")
-    print(f"[FALLBACK] Starting basic server on {HOST}:{PORT}")
-    handler = SimpleHTTPRequestHandler
-    httpd = HTTPServer((HOST, PORT), handler)
-    print(f"Serving on http://{HOST}:{PORT}")
-    httpd.serve_forever()
+class CustomHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        # Intercept root request "/"
+        if self.path == "/":
+            self.path = f"/{TARGET_FILE}"
+        
+        # Prevent directory listing if path ends in /
+        if self.path.endswith("/"):
+            self.path += TARGET_FILE
+            
+        return super().do_GET()
+
+    def log_message(self, format, *args):
+        # Cleaner logs for debugging
+        print(f"[{self.log_date_time_string()}] {format % args}")
+
+def main():
+    if not os.path.exists(TARGET_FILE):
+        print(f"[-] Error: {TARGET_FILE} not found in current directory ({os.getcwd()})")
+        # List contents for debug
+        print("Contents:", os.listdir("."))
+        sys.exit(1)
+
+    print(f"[+] Serving {TARGET_FILE} as index on http://{HOST}:{PORT}")
+    
+    # Change dir to where homepage.html lives (repo root)
+    # If it's in a subfolder like 'web/', change os.chdir(".") to os.chdir("web/")
+    os.chdir(".") 
+    
+    httpd = HTTPServer((HOST, PORT), CustomHandler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+if __name__ == "__main__":
+    main()
